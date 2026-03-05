@@ -1,0 +1,30 @@
+runtime: python311
+instance_class: F2
+
+entrypoint: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+
+env_variables:
+  ENVIRONMENT: "production"
+  # For local dev you use .env; in App Engine you can set OPENAI_API_KEY here
+  # or via the UI. Replace this with your real key or remove and set in console.
+  # OPENAI_API_KEY: "sk-xxxxx"
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 1
+  target_cpu_utilization: 0.65
+
+handlers:
+  # Serve built React frontend (Vite) statically
+  - url: /assets
+    static_dir: frontend/dist/assets
+
+  - url: /
+    static_files: frontend/dist/index.html
+    upload: frontend/dist/index.html
+
+  # All other paths (API) go to FastAPI
+  - url: /.*
+    script: auto
+    secure: always
+
