@@ -27,6 +27,12 @@ Mobile-first web app that collects three city interests from the user via chat, 
 - **Validation:** User confirms with “Yes, that’s what I meant” or “No”; either way the interest counts and the flow continues.
 - **Profile:** When 3 interests are collected, a structured profile `{ "interests": [...] }` is generated server-side and displayed.
 
+## Interest categories and real examples
+
+The exercise says an interest *“can be any activity category”* and gives examples (Mexican restaurants, live jazz, rooftop bars, art galleries, farmers markets, beach activities). It also requires that **each interest be backed by 3 real Miami examples** (real venue/event names, not placeholders).
+
+We therefore **restrict accepted interests to categories we have real venue data for**. That isn’t limiting “what you can do in Miami”—it’s limiting **which interests we can show 3 real examples for**. The app supports more than the six doc examples: food, mexican food, live jazz, rooftop bars, art galleries, farmers markets, beach activities, sports, nightlife, coffee shops, brunch. If the user says something we don’t have a category for (e.g. “tea shop”, “kayaking”), we don’t add it and we respond with a short “didn’t catch that” and suggest options from our list. Adding more categories is a matter of adding more entries to `MIAMI_VENUES` in the backend.
+
 ## Tech stack
 
 - **Backend:** Python, FastAPI, Uvicorn. Session state in memory; OpenAI (GPT-4o-mini) for conversation and interest extraction.
