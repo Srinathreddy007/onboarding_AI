@@ -19,6 +19,10 @@ handlers:
   - url: /assets
     static_dir: frontend/dist/assets
 
+  - url: /hellocity-logo.png
+    static_files: frontend/dist/hellocity-logo.png
+    upload: frontend/dist/hellocity-logo.png
+
   - url: /
     static_files: frontend/dist/index.html
     upload: frontend/dist/index.html

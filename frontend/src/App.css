@@ -34,9 +34,11 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.8rem 1rem;
+  padding: 0.8rem max(1rem, env(safe-area-inset-right)) 0.8rem max(1rem, env(safe-area-inset-left));
   background: var(--hc-yellow);
   flex-shrink: 0;
+  overflow: visible;
+  min-width: 0;
 }
 
 .logo-img {
@@ -44,6 +46,12 @@
   height: 32px;
   object-fit: contain;
   flex-shrink: 0;
+  display: block;
+}
+
+.header-text {
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .header-text h1 {

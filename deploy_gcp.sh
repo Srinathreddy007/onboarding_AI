@@ -26,22 +26,16 @@ if [ -z "$PROJECT_ID" ]; then
   exit 1
 fi
 
-if [ -z "$OPENAI_API_KEY" ]; then
-  echo "ERROR: OPENAI_API_KEY is not set in your shell."
-  echo "Export it first, e.g.:"
-  echo "  export OPENAI_API_KEY=\"sk-your-real-key\""
-  exit 1
-fi
-
+# OPENAI_API_KEY: optional. If set, passed to App Engine; if not, app uses Secret Manager (openai-api-key) in production.
 APP_URL="https://${PROJECT_ID}.appspot.com"
 
 echo ""
 echo "▸ Step 1/2: Building frontend (Vite)..."
 cd frontend
 
-# Point frontend at the App Engine URL so API calls go to the same origin
+# Use empty base URL so API calls are same-origin (avoids CORS / wrong host in prod)
 cat > .env.production <<EOF
-VITE_API_BASE_URL=${APP_URL}
+VITE_API_BASE_URL=
 EOF
 
 npm install
@@ -51,8 +45,12 @@ echo "  Frontend built to frontend/dist"
 
 echo ""
 echo "▸ Step 2/2: Deploying to App Engine..."
-gcloud app deploy app.yaml --quiet \
-  --set-env-vars="OPENAI_API_KEY=${OPENAI_API_KEY}"
+if [ -n "$OPENAI_API_KEY" ]; then
+  gcloud app deploy app.yaml --quiet --set-env-vars="OPENAI_API_KEY=${OPENAI_API_KEY}"
+else
+  echo "  (OPENAI_API_KEY not set; app will use Secret Manager 'openai-api-key' in production)"
+  gcloud app deploy app.yaml --quiet
+fi
 
 echo ""
 echo "══════════════════════════════════════════════════════════"

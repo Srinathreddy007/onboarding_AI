@@ -165,6 +165,7 @@ TYPO_TO_CANONICAL: Dict[str, str] = {
     "resto": "food", "restobar": "food", "restobars": "food",
     "rooftop bar": "rooftop bars", "rooftop": "rooftop bars",
     "farmers market": "farmers markets", "farmer market": "farmers markets",
+    "farmers": "farmers markets", "farmer": "farmers markets",
     "beach activity": "beach activities", "beach": "beach activities",
     "live music": "live jazz", "jazz": "live jazz", "music": "live jazz",
     "concerts": "live jazz", "live band": "live jazz",
@@ -182,7 +183,7 @@ INTEREST_KEYWORDS: List[tuple] = [
     (["mexican", "tacos", "taco"], "mexican food"),
     (["rooftop", "bars with a view"], "rooftop bars"),
     (["art", "gallery", "galleries", "gallaries", "galeries", "gallary", "galery", "galleri", "museum", "museums"], "art galleries"),
-    (["farmers market", "farmers markets", "market"], "farmers markets"),
+    (["farmers market", "farmers markets", "farmers", "farmer", "market"], "farmers markets"),
     (["beach", "beaches", "swimming", "sunbathe", "surfing"], "beach activities"),
     (["football", "soccer", "sports", "play football", "play soccer", "sport"], "sports"),
     (["nightlife", "clubs", "clubbing", "party", "dancing"], "nightlife"),
@@ -340,8 +341,9 @@ def _llm_one_line(prompt: str, fallback: str) -> str:
 def _examples_intro(interest: str) -> str:
     fallback = f"Here are some spots in Miami for {interest}."
     return _llm_one_line(
-        f"The user said they like '{interest}'. Acknowledge it enthusiastically and tell them you're showing Miami spots for it. "
-        "Keep it to one sentence, casual, varied. Don't start with 'Ooh' every time.",
+        f"The user said they like '{interest}'. Reply in one short casual sentence: acknowledge and say you're showing Miami spots. "
+        "Use a comma or period, not an em dash (—). Do NOT say 'you're going to love' or 'I found' or 'awesome'. "
+        "Examples: 'Nice, here are some spots for that.' 'Got it. Here are some Miami spots for " + interest + ".'",
         fallback,
     )
 
@@ -375,6 +377,17 @@ def _unknown_message(existing: List[str]) -> str:
         f"The user said something you couldn't match to an activity category. "
         f"Interests so far: {existing}. Need {needed} more. Available options: {opts}. "
         "Let them know gently and suggest options. One sentence, casual, no lists.",
+        fallback,
+    )
+
+
+def _duplicate_interest_message(existing: List[str], duplicate_label: str) -> str:
+    """When the user named an interest we already have; acknowledge and suggest something different."""
+    opts = _remaining_options(existing)
+    fallback = f"You already have {duplicate_label} in your list. What else? Maybe {opts}?"
+    return _llm_one_line(
+        f"The user said something that maps to '{duplicate_label}', which is already in their list. "
+        f"Tell them you already have that one and ask for a different interest. Suggest: {opts}. One sentence, casual.",
         fallback,
     )
 
@@ -425,7 +438,7 @@ def call_llm(messages: List[ChatMessage], existing: List[str]) -> Dict[str, Any]
         "set interest_candidates to [] and reply acknowledging that and asking what they'd like instead. Do NOT suggest that category.\n"
         "2. When the user greets you (hi/hello/hey), reply in a relaxed way and ask what they're into. Mention 2-3 categories they haven't picked yet.\n"
         "3. When the user mentions an activity they LIKE, map it to the closest valid category. Be generous with typos and variants.\n"
-        "4. When you detect an interest, set interest_candidates to [category_label] and assistant_message to a short casual reply. Do NOT ask what they like again.\n"
+        "4. When you detect an interest, set interest_candidates to [category_label] and assistant_message to ONE short casual sentence (e.g. 'Nice, here are some spots for that.' or 'Got it. Here are some Miami spots for that.'). No em dashes (—). No 'you're going to love' or 'I found' or 'awesome'. Do NOT ask what they like again.\n"
         "5. When you CANNOT map to any category, set interest_candidates to [] and assistant_message should say you didn't get it and suggest options. Keep it friendly.\n"
         "6. NEVER repeat the exact same message. Vary your wording.\n\n"
         "Return ONLY valid JSON: {\"assistant_message\": \"...\", \"interest_candidates\": [...]}. No markdown."
@@ -493,19 +506,29 @@ def chat(req: ChatRequest) -> ChatResponse:
     # Find the first new interest (skip if user explicitly rejected it, e.g. "i dont want brunch")
     new_interest: Optional[str] = None
     handled_rejection = False
+    duplicate_label: Optional[str] = None  # first candidate that was already in list
     for cand in candidates:
         label = choose_interest_label(cand)
-        if label and label.lower() not in [i.lower() for i in state.interests]:
-            if _user_rejects_interest(req.message, label):
-                new_interest = None
-                handled_rejection = True
-                assistant_message = _llm_one_line(
-                    f"The user said they do NOT want '{label}'. Acknowledge that and ask what they'd like instead. One sentence, casual.",
-                    f"Got it, no {label}. What else are you into? Maybe {_remaining_options(state.interests)}?",
-                )
-            else:
-                new_interest = label
-            break
+        if not label:
+            continue
+        if label.lower() in [i.lower() for i in state.interests]:
+            if duplicate_label is None:
+                duplicate_label = label
+            continue
+        if _user_rejects_interest(req.message, label):
+            new_interest = None
+            handled_rejection = True
+            assistant_message = _llm_one_line(
+                f"The user said they do NOT want '{label}'. Acknowledge that and ask what they'd like instead. One sentence, casual.",
+                f"Got it, no {label}. What else are you into? Maybe {_remaining_options(state.interests)}?",
+            )
+        else:
+            new_interest = label
+        break
+
+    # All candidates were duplicates: acknowledge and ask for something different
+    if new_interest is None and not handled_rejection and duplicate_label is not None:
+        assistant_message = _duplicate_interest_message(state.interests, duplicate_label)
 
     # Show examples and count the interest
     examples: List[MiamiExample] = []
@@ -513,7 +536,7 @@ def chat(req: ChatRequest) -> ChatResponse:
         state.interests.append(new_interest)
         examples = get_examples(new_interest)
         state.awaiting_confirmation = True
-    elif not candidates and not handled_rejection:
+    elif not candidates and not handled_rejection and duplicate_label is None:
         # No interest found — check if they were rejecting a category (e.g. "i dont want rooftop bar")
         rejected_category = None
         for cat in VALID_CATEGORIES:
