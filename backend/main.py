@@ -775,12 +775,6 @@ def find_miami_places(search_query: str, limit: int = 3) -> List[MiamiExample]:
             resp = requests.get(GOOGLE_PLACES_ENDPOINT, params=params, timeout=5)
             resp.raise_for_status()
             data = resp.json()
-            # Debug: print Google Places API response
-            print("[Google Places API] query=%r status=%s results=%s" % (
-                params.get("query"), data.get("status"), len(data.get("results", []))
-            ))
-            if os.getenv("GOOGLE_PLACES_DEBUG"):
-                print("[Google Places API] full response:", data)
             status = data.get("status", "")
             results = data.get("results", [])[:limit]
             if status == "OK" and results:
@@ -803,16 +797,6 @@ def find_miami_places(search_query: str, limit: int = 3) -> List[MiamiExample]:
                         description=desc,
                         hours=hours_str,
                     ))
-                # Log what we're actually using from Google Places
-                print("[Google Places API] examples used:", [
-                    {
-                        "name": e.name,
-                        "neighborhood": e.neighborhood,
-                        "description": e.description,
-                        "hours": e.hours,
-                    }
-                    for e in examples
-                ])
                 PLACES_CACHE[key] = {"ts": now, "examples": examples}
                 return examples
         except Exception:
@@ -1431,8 +1415,6 @@ def _llm_extract_candidates(
         raw = resp.choices[0].message.content or "{}"
         data = _parse_llm_json(raw)
         candidates = _parse_interest_candidates(data.get("interest_candidates"))
-        print("[LLM extractor] raw_json_response:", raw)
-        print("[LLM extractor] parsed_candidates:", candidates)
         return candidates
     except Exception:
         return []
@@ -1471,8 +1453,6 @@ def _llm_refine_search_candidate(
         raw = resp.choices[0].message.content or "{}"
         data = _parse_llm_json(raw)
         candidates = _parse_interest_candidates(data.get("interest_candidates"))
-        print("[LLM search refiner] raw_json_response:", raw)
-        print("[LLM search refiner] parsed_candidates:", candidates)
         return candidates
     except Exception:
         return []
@@ -1504,8 +1484,6 @@ def _llm_classify_non_interest_query(client: Any, user_text: str) -> str:
         raw = resp.choices[0].message.content or "{}"
         data = _parse_llm_json(raw)
         intent = str(data.get("intent") or "").strip().lower()
-        print("[LLM intent classifier] raw_json_response:", raw)
-        print("[LLM intent classifier] intent:", intent)
         return intent
     except Exception:
         return ""
@@ -1622,11 +1600,6 @@ def call_llm(messages: List[ChatMessage], existing: List[str]) -> Dict[str, Any]
         msg = _examples_intro(candidates[0]["label"], messages)
     msg = _clean_assistant_text(msg)
 
-    # Debug: log exactly what the LLM returned and how we parsed it
-    print("[LLM] existing_interests:", existing)
-    print("[LLM] raw_json_response:", raw)
-    print("[LLM] parsed_candidates:", candidates)
-
     return {"assistant_message": msg, "interest_candidates": candidates}
 
 
@@ -1733,10 +1706,6 @@ def chat(req: ChatRequest) -> ChatResponse:
             search_query = cand.get("search_query") or label
             chosen_source = cand.get("source") or "unknown"
         break
-
-    # Debug: log what we ended up using for this turn
-    print("[Chat] normalized_candidates:", candidates)
-    print("[Chat] chosen_interest:", new_interest, "search_query:", search_query, "source:", chosen_source)
 
     # All candidates were duplicates: acknowledge and ask for something different
     if new_interest is None and not handled_rejection and duplicate_label is not None:
