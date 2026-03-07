@@ -5,9 +5,10 @@ entrypoint: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
 
 env_variables:
   ENVIRONMENT: "production"
-  # For local dev you use .env; in App Engine you can set OPENAI_API_KEY here
-  # or via the UI. Replace this with your real key or remove and set in console.
+  # For local dev you use .env; in App Engine you can set OPENAI_API_KEY and
+  # GOOGLE_PLACES_API_KEY here, via deploy_gcp.sh, or in the Cloud console.
   # OPENAI_API_KEY: "sk-xxxxx"
+  # GOOGLE_PLACES_API_KEY: "AIza..."
 
 automatic_scaling:
   min_instances: 0
@@ -31,4 +32,3 @@ handlers:
   - url: /.*
     script: auto
     secure: always
-
