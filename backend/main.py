@@ -148,154 +148,16 @@ PLACES_TTL_SECONDS = 7 * 24 * 60 * 60  # 7 days
 PLACES_CACHE: Dict[str, Dict[str, Any]] = {}
 
 # ---------------------------------------------------------------------------
-# Interest mapping layers
+# The LLM handles all interest recognition, extraction, and sentiment analysis.
+# These minimal maps only serve as (a) prompt examples and (b) last-resort
+# fallback when the OpenAI API call itself throws an exception.
 # ---------------------------------------------------------------------------
-#
-# 1. NORMALIZED_CATEGORY_ALIASES:
-#    Static typo / synonym cleanup for backend recovery when the LLM is vague.
-# 2. FALLBACK_KEYWORD_CATEGORIES and SEMANTIC_CATEGORY_PATTERNS:
-#    Extra backend-only extraction rules for common phrases.
-# 3. CANONICAL_CATEGORY_SEARCH_QUERIES:
-#    Canonical supported search labels that map cleanly to real Miami place searches.
-#    The LLM can still propose labels outside this set, but these are the backend's
-#    strongest supported categories for search and suggestion copy.
 
-NORMALIZED_CATEGORY_ALIASES: Dict[str, str] = {
-    # Art
-    "gallaries": "art galleries", "galeries": "art galleries", "gallary": "art galleries",
-    "galery": "art galleries", "galleri": "art galleries", "gallerys": "art galleries",
-    "art gallery": "art galleries", "art gallaries": "art galleries", "museums": "art galleries",
-    # Food
-    "restraunt": "food", "resturant": "food", "restaurants": "food", "restaurant": "food",
-    "resto": "food", "restobar": "food", "restobars": "food", "diners": "food", "diner": "food",
-    "eating": "food", "dining": "food", "eat out": "food",
-    # Mexican
-    "mexican": "mexican food", "tacos": "mexican food", "taco": "mexican food",
-    # Rooftop
-    "rooftop bar": "rooftop bars", "rooftop": "rooftop bars",
-    # Farmers
-    "farmers market": "farmers markets", "farmer market": "farmers markets",
-    "farmers": "farmers markets", "farmer": "farmers markets",
-    # Beach
-    "beach activity": "beach activities", "beach": "beach activities",
-    "swimming": "beach activities", "swim": "beach activities",
-    # Music
-    "live music": "live music", "jazz": "live music", "music": "live music",
-    "concerts": "live music", "live band": "live music", "live jazz": "live music",
-    # Sports
-    "football": "sports", "soccer": "sports", "play football": "sports", "play soccer": "sports",
-    "basketball": "sports", "baseball": "sports",
-    # Nightlife
-    "clubs": "nightlife", "clubbing": "nightlife", "party": "nightlife", "dancing": "nightlife",
-    "dance": "nightlife",
-    # Coffee
-    "coffee": "coffee shops", "cafe": "coffee shops", "café": "coffee shops",
-    # Brunch
-    "breakfast": "brunch",
-    # Movies / Cinema
-    "movies": "movies", "movie": "movies", "cinema": "movies", "cinemas": "movies",
-    "film": "movies", "films": "movies", "movie theater": "movies", "movie theatre": "movies",
-    # Outdoor
-    "hiking": "outdoor activities", "hikes": "outdoor activities", "hike": "outdoor activities",
-    "trek": "outdoor activities", "treks": "outdoor activities", "trekking": "outdoor activities",
-    "parks": "outdoor activities", "park": "outdoor activities", "trails": "outdoor activities",
-    "nature": "outdoor activities", "walks": "outdoor activities", "walk": "outdoor activities",
-    "dog walking": "outdoor activities", "dog walk": "outdoor activities",
-    # Racket sports
-    "padel": "racket sports", "paddle": "racket sports", "tennis": "racket sports",
-    "pickleball": "racket sports", "badminton": "racket sports", "squash": "racket sports",
-    # Arcades / Gaming
-    "arcade": "arcades and gaming", "arcades": "arcades and gaming", "gaming": "arcades and gaming",
-    "bowling": "arcades and gaming", "go-karts": "arcades and gaming",
-    "go karts": "arcades and gaming", "escape room": "arcades and gaming",
-    # Yoga / Wellness
-    "yoga": "yoga and wellness", "wellness": "yoga and wellness", "spa": "yoga and wellness",
-    "meditation": "yoga and wellness", "pilates": "yoga and wellness",
-    # Water sports
-    "kayaking": "water sports", "kayak": "water sports", "paddleboard": "water sports",
-    "jet ski": "water sports", "snorkeling": "water sports", "scuba": "water sports",
-    "surfing": "water sports", "kiteboarding": "water sports",
-    # Water parks
-    "water park": "water parks", "waterpark": "water parks", "waterparks": "water parks",
-    "water world": "water parks", "waterworld": "water parks",
-    "water slides": "water parks", "water slide": "water parks", "water rides": "water parks",
-    "waterride": "water parks", "waterrides": "water parks",
-    # Shopping
-    "shopping": "shopping", "shop": "shopping", "shops": "shopping", "mall": "shopping",
-    "boutiques": "shopping",
-    # Family
-    "family": "family fun", "kids": "family fun", "children": "family fun",
-    "zoo": "family fun", "aquarium": "family fun",
-    # Sightseeing
-    "sightseeing": "sightseeing", "sight seeing": "sightseeing", "tours": "sightseeing",
-    "tour": "sightseeing", "landmarks": "sightseeing",
-    # Fitness
-    "gym": "fitness", "fitness": "fitness", "workout": "fitness", "crossfit": "fitness",
-    "running": "fitness", "jogging": "fitness",
-}
-
-FALLBACK_KEYWORD_CATEGORIES: List[tuple[list[str], str]] = [
-    (["live music", "live musix", "live musik", "music", "jazz", "concerts", "live band"], "live music"),
-    (["food", "restaurant", "restaurants", "resto", "restobar", "restobars", "eating", "dining", "eat out", "restraunt", "resturant", "diner", "diners"], "food"),
-    (["mexican", "tacos", "taco"], "mexican food"),
-    (["rooftop", "bars with a view"], "rooftop bars"),
-    (["art", "gallery", "galleries", "gallaries", "galeries", "gallary", "museum", "museums"], "art galleries"),
-    (["farmers market", "farmers markets", "farmers", "farmer", "market"], "farmers markets"),
-    (["beach", "beaches", "sunbathe", "swim", "swimming"], "beach activities"),
-    (["football", "soccer", "sports", "play football", "play soccer", "sport", "basketball", "baseball"], "sports"),
-    (["nightlife", "clubs", "clubbing", "party", "dancing", "dance"], "nightlife"),
-    (["coffee", "cafe", "café", "espresso", "latte"], "coffee shops"),
-    (["brunch", "mimosa", "breakfast"], "brunch"),
-    (["movie", "movies", "cinema", "cinemas", "film", "films", "movie theater", "theater", "theatre"], "movies"),
-    (["hik", "trek", "trekking", "park", "trail", "nature", "walk", "outdoor", "dog walk", "long walk"], "outdoor activities"),
-    (["padel", "paddle", "tennis", "pickleball", "badminton", "squash", "racket"], "racket sports"),
-    (["arcade", "gaming", "bowling", "go-kart", "escape room"], "arcades and gaming"),
-    (["yoga", "wellness", "spa", "meditation", "pilates"], "yoga and wellness"),
-    (["water park", "waterpark", "waterparks", "water world", "waterworld", "water slide", "water slides", "water rides", "waterride", "waterrides"], "water parks"),
-    (["kayak", "paddleboard", "jet ski", "snorkel", "scuba", "surf", "kite"], "water sports"),
-    (["shopping", "shop", "mall", "boutique"], "shopping"),
-    (["family", "kids", "children", "zoo", "aquarium"], "family fun"),
-    (["sightseeing", "tour", "landmark", "sight"], "sightseeing"),
-    (["gym", "fitness", "workout", "crossfit", "running", "jogging"], "fitness"),
-]
-
-CANONICAL_CATEGORY_SEARCH_QUERIES: Dict[str, str] = {
-    "live music": "live music venues",
-    "food": "restaurants",
-    "mexican food": "mexican restaurants",
-    "rooftop bars": "rooftop bars",
-    "art galleries": "art galleries",
-    "farmers markets": "farmers markets",
-    "beach activities": "beach activities",
-    "outdoor activities": "parks and hiking trails",
-    "racket sports": "padel tennis pickleball courts",
-    "sports": "sports bars and stadium activities",
-    "movies": "movie theaters",
-    "arcades and gaming": "arcades and family entertainment centers",
-    "family fun": "family attractions",
-    "nightlife": "nightlife spots",
-    "coffee shops": "coffee shops",
-    "brunch": "brunch spots",
-    "yoga and wellness": "yoga studios and wellness spots",
-    "water sports": "water sports rentals",
-    "water parks": "water parks",
-    "shopping": "shopping centers and boutiques",
-    "sightseeing": "sightseeing attractions",
-    "fitness": "fitness studios and gyms",
-}
-
-SUPPORTED_SEARCH_CATEGORIES: List[str] = list(CANONICAL_CATEGORY_SEARCH_QUERIES.keys())
-
-SEMANTIC_CATEGORY_PATTERNS: List[tuple[list[str], str]] = [
-    (["movie theater", "movie theatre", "going to movies", "going to the movies", "cinema", "cinemas", "films", "movies"], "movies"),
-    (["arcades", "arcade", "gaming", "bowling", "go karts", "go-karts", "escape room"], "arcades and gaming"),
-    (["padel", "tennis", "pickleball", "badminton", "squash"], "racket sports"),
-    (["long walks", "walks with my dog", "walk with my dog", "parks", "park", "hiking", "hikes", "hike", "trails", "nature"], "outdoor activities"),
-    (["swimming", "swim", "beach"], "beach activities"),
-    (["dancing", "dance", "clubs", "nightlife"], "nightlife"),
-    (["coffee", "cafe", "café"], "coffee shops"),
-    (["brunch", "breakfast"], "brunch"),
-]
+NORMALIZED_CATEGORY_ALIASES: Dict[str, str] = {}
+FALLBACK_KEYWORD_CATEGORIES: List[tuple[list[str], str]] = []
+CANONICAL_CATEGORY_SEARCH_QUERIES: Dict[str, str] = {}
+SUPPORTED_SEARCH_CATEGORIES: List[str] = []
+SEMANTIC_CATEGORY_PATTERNS: List[tuple[list[str], str]] = []
 
 FOOD_INTEREST_TERMS: set[str] = {
     "food",
@@ -445,26 +307,7 @@ NEWS_HINT_TOKENS: set[str] = {"news", "headline", "headlines", "score", "scores"
 # ---------------------------------------------------------------------------
 
 def choose_interest_label(raw: str) -> str:
-    key = raw.strip().lower()
-    if not key:
-        return raw.strip()
-    specific_food = _extract_specific_food_candidate(key)
-    if specific_food:
-        return specific_food["label"]
-    if key in NORMALIZED_CATEGORY_ALIASES:
-        return NORMALIZED_CATEGORY_ALIASES[key]
-    for canonical in sorted(SUPPORTED_SEARCH_CATEGORIES, key=len, reverse=True):
-        if key == canonical:
-            return canonical
-    for typo, canonical in NORMALIZED_CATEGORY_ALIASES.items():
-        if typo in key:
-            return canonical
-    for canonical in sorted(SUPPORTED_SEARCH_CATEGORIES, key=len, reverse=True):
-        if canonical in key or key in canonical:
-            return canonical
-    for canonical in MIAMI_VENUES:
-        if canonical in key or key in canonical:
-            return canonical
+    """Return the label as-is (trimmed). The LLM is responsible for choosing good labels."""
     return raw.strip()
 
 
@@ -621,82 +464,33 @@ def _is_out_of_scope_query(text: str) -> bool:
 
 
 def _normalize_candidate(label: str, search_query: Optional[str] = None) -> Optional[Dict[str, str]]:
+    """Minimal normalizer - just trims whitespace. LLM handles the rest."""
     raw_label = (label or "").strip()
     if not raw_label:
         return None
-
     raw_query = (search_query or raw_label).strip()
-    specific_food = _extract_specific_food_candidate(raw_query) or _extract_specific_food_candidate(raw_label)
+    return {"label": raw_label, "search_query": raw_query}
 
-    normalized_label = choose_interest_label(raw_label)
-    if specific_food and normalized_label == "food":
-        normalized_label = specific_food["label"]
-    normalized_key = _normalize_text(normalized_label)
 
-    if normalized_label not in SUPPORTED_SEARCH_CATEGORIES:
-        for phrases, canonical in SEMANTIC_CATEGORY_PATTERNS:
-            if normalized_key == canonical or any(_contains_normalized_phrase(normalized_key, phrase) for phrase in phrases):
-                normalized_label = canonical
-                break
+def _normalize_candidate_from_llm(label: str, search_query: Optional[str] = None) -> Optional[Dict[str, str]]:
+    """
+    Normalize a candidate coming from the LLM.
 
-    query = raw_query
-    if not query:
-        query = normalized_label
-
-    if specific_food and normalized_label == specific_food["label"]:
-        query = specific_food["search_query"]
-    elif normalized_label in CANONICAL_CATEGORY_SEARCH_QUERIES:
-        query = CANONICAL_CATEGORY_SEARCH_QUERIES[normalized_label]
-
-    return {"label": normalized_label, "search_query": query}
+    We keep the label specific whenever possible (e.g. 'soccer', 'padel',
+    'water parks and slides', 'poetry readings') and only trim whitespace.
+    The LLM is responsible for choosing a good search_query; we just fall back
+    to the label when it's missing.
+    """
+    raw_label = (label or "").strip()
+    if not raw_label:
+        return None
+    raw_query = (search_query or raw_label).strip()
+    return {"label": raw_label, "search_query": raw_query}
 
 
 def extract_interest_fallbacks(msg: str, existing: List[str]) -> List[Dict[str, str]]:
-    text = _normalize_text(msg)
-    existing_lower = {item.lower() for item in existing}
-    if not text or _is_small_talk(text):
-        return []
-    if (text.startswith("yes") or text.startswith("no")) and len(text) < 60:
-        return []
-
-    candidates: List[Dict[str, str]] = []
-    seen: set[str] = set()
-
-    specific_food = _extract_specific_food_candidate(text)
-    if specific_food and specific_food["label"].lower() not in existing_lower and not _user_rejects_interest(msg, specific_food["label"]):
-        seen.add(specific_food["label"].lower())
-        candidates.append(specific_food)
-
-    if text in NORMALIZED_CATEGORY_ALIASES:
-        canonical = NORMALIZED_CATEGORY_ALIASES[text]
-        normalized = _normalize_candidate(canonical)
-        if normalized and normalized["label"].lower() not in existing_lower and not _user_rejects_interest(msg, normalized["label"]):
-            seen.add(normalized["label"].lower())
-            candidates.append(normalized)
-
-    for phrases, canonical in SEMANTIC_CATEGORY_PATTERNS:
-        if canonical.lower() in existing_lower or canonical.lower() in seen:
-            continue
-        if any(_contains_normalized_phrase(text, phrase) for phrase in phrases):
-            if _user_rejects_interest(msg, canonical):
-                continue
-            normalized = _normalize_candidate(canonical)
-            if normalized:
-                seen.add(normalized["label"].lower())
-                candidates.append(normalized)
-
-    for keywords, canonical in FALLBACK_KEYWORD_CATEGORIES:
-        if canonical.lower() in existing_lower or canonical.lower() in seen:
-            continue
-        if any(kw in text for kw in keywords):
-            if _user_rejects_interest(msg, canonical):
-                continue
-            normalized = _normalize_candidate(canonical)
-            if normalized:
-                seen.add(normalized["label"].lower())
-                candidates.append(normalized)
-
-    return candidates
+    """Minimal fallback - only used when LLM API itself is unreachable. Returns []."""
+    return []
 
 
 def get_examples(interest: str) -> List[MiamiExample]:
@@ -822,6 +616,7 @@ def _user_rejects_interest(msg: str, interest: str) -> bool:
         "don't want", "dont want", "do not want", "not into", "skip", "without",
         "avoid", "not interested in", "never want", "don't need", "dont need",
         "no interest in", "not a fan of", "don't like", "dont like",
+        "hate", "hates", "can't stand", "cant stand",
     ]
     has_neg = any(np in t for np in neg_phrases) or t.startswith("no ") or " not " in t
     if not has_neg:
@@ -1362,13 +1157,13 @@ def _parse_interest_candidates(raw_candidates: Any) -> List[Dict[str, str]]:
     if isinstance(raw_candidates, list):
         for c in raw_candidates:
             if isinstance(c, str):
-                normalized = _normalize_candidate(c, c)
+                normalized = _normalize_candidate_from_llm(c, c)
                 if normalized:
                     candidates.append(normalized)
             elif isinstance(c, dict):
                 label = c.get("label") or c.get("interest") or ""
                 search_query = c.get("search_query") or label
-                normalized = _normalize_candidate(label, search_query)
+                normalized = _normalize_candidate_from_llm(label, search_query)
                 if normalized:
                     candidates.append(normalized)
     return candidates
@@ -1392,15 +1187,14 @@ def _llm_extract_candidates(
         f"User message: {user_text}\n\n"
         "Rules:\n"
         "1. Return only JSON.\n"
-        "2. If the user is naming, implying, asking where to do, asking how to do, or asking for spots for an activity, extract it as an interest.\n"
-        "3. Treat questions like 'how do I play padel', 'where can I play badminton', 'where can I dance with my wife', or 'suggest football spots' as interest submissions.\n"
-        "4. Use broad labels when helpful, but do not force every interest into a fixed category. If a specific activity or cuisine is clearer, keep it.\n"
-        "5. Preserve cuisine specificity for food interests. For example, 'indian food' should stay 'indian food' with a search query like 'indian restaurants'.\n"
+        "2. ONLY extract activities the user expresses positively. Ignore anything mentioned with hate/don't like/not into.\n"
+        "3. Any activity, hobby, cuisine, vibe, or experience is valid. No fixed category list.\n"
+        "4. Keep labels specific: 'soccer' not 'sports', 'indian food' not 'food', 'water views' not 'outdoor activities'.\n"
         f"{typo_rules}"
-        "6. Return up to 3 candidates with label and search_query.\n"
-        "7. If there is no activity interest, return an empty list.\n\n"
-        "Return JSON only in this format:\n"
-        "{\"interest_candidates\": [{\"label\": \"...\", \"search_query\": \"...\"}]}"
+        "5. search_query should be optimized for Google Places API, e.g. 'soccer fields in Miami', 'indian restaurants in Miami'.\n"
+        "6. Return up to 3 candidates.\n"
+        "7. If there is no positive activity interest, return an empty list.\n\n"
+        "Return JSON only: {\"interest_candidates\": [{\"label\": \"...\", \"search_query\": \"... in Miami\"}]}"
     )
     try:
         resp = client.chat.completions.create(
@@ -1431,14 +1225,13 @@ def _llm_refine_search_candidate(
         f"User message: {user_text}\n\n"
         "Rules:\n"
         "1. Return JSON only.\n"
-        "2. If the user is clearly asking about an activity, event type, hobby, or vibe, return one candidate.\n"
-        "3. It is fine to go beyond common categories like nightlife or sports.\n"
-        "4. Keep the label specific when useful, for example poetry readings, pottery classes, karaoke nights, board game cafes, salsa dancing, indian food, vegan food, sushi.\n"
-        "5. Infer simple misspellings and merged words when the intent is obvious, for example waterrides, pedal, coffeeshops, moviez.\n"
-        "6. The search_query should be optimized for real Miami place search results.\n"
-        "7. If there is no usable activity, return an empty list.\n\n"
-        "Return JSON only in this format:\n"
-        "{\"interest_candidates\": [{\"label\": \"...\", \"search_query\": \"... in Miami\"}]}"
+        "2. ONLY extract positively expressed activities. Ignore dislikes entirely.\n"
+        "3. Any activity, hobby, vibe, cuisine, or experience is valid. No fixed list.\n"
+        "4. Keep labels specific: poetry readings, pottery classes, water views, salsa dancing, indian food, vegan food.\n"
+        "5. Fix obvious typos: waterrides -> water parks, coffeeshops -> coffee shops, moviez -> movies.\n"
+        "6. search_query should be optimized for Google Places API with 'in Miami' appended.\n"
+        "7. If there is no positive activity, return an empty list.\n\n"
+        "Return JSON only: {\"interest_candidates\": [{\"label\": \"...\", \"search_query\": \"... in Miami\"}]}"
     )
     try:
         resp = client.chat.completions.create(
@@ -1534,28 +1327,39 @@ def call_llm(messages: List[ChatMessage], existing: List[str]) -> Dict[str, Any]
         "You are HelloCity's onboarding assistant helping users find what they love to do in Miami. "
         "Sound casual and natural, like you're texting a friend. No corporate or robotic phrases. Use contractions, short sentences, and a warm tone.\n\n"
         f"STATE: {state_info}\n"
-        f"EXAMPLE INTERESTS (you are NOT limited to these): {example_cats}\n\n"
+        f"EXAMPLE INTERESTS (you are NOT limited to these, any activity is valid): {example_cats}\n\n"
         f"RECENT CHAT:\n{recent_history}\n\n"
         "GOALS:\n"
         "- Have a friendly, human-feeling conversation.\n"
         "- Help the user discover 3 interests about what they enjoy doing in a city like Miami.\n"
-        "- For each interest, propose a label AND a search_query that the backend can use with a places API.\n"
-        "- If the user mentions more than one interest in a single message, extract up to 3 candidates.\n\n"
+        "- For each interest, propose a label AND a search_query optimized for Google Places API (append 'in Miami' to the search_query).\n"
+        "- If the user mentions more than one interest in a single message, extract up to 3 candidates.\n"
+        "- You are the SOLE judge of what counts as an interest. There is no hardcoded list. Any activity, hobby, vibe, cuisine, or experience the user expresses positively is valid.\n\n"
         "RULES:\n"
-        "1. When the user says they do NOT want something (e.g. 'i dont want brunch', 'no brunch', 'not into art'), "
-        "set interest_candidates to [] and reply acknowledging that and asking what they'd like instead. Do NOT suggest that category.\n"
-        "2. When the user greets you (hi/hello/hey) or makes small talk (e.g. 'how are you', 'what model are you'), reply naturally in 1–2 short sentences, then gently steer back to what they like to do (mention 2–3 options they haven't picked yet).\n"
-        "3. When the user mentions an activity they LIKE (even in a long sentence), map it to a short, natural activity label. "
-        "Prefer broad labels when they improve search quality, but do not force every interest into a fixed set. Specific interests are allowed when they are searchable in Miami.\n"
-        "Examples: 'dancing with my wife' -> nightlife, 'I love taking my son to arcades' -> arcades and gaming, 'walks with my dog at parks' -> outdoor activities, 'padel and tennis' -> racket sports, 'movies' or 'cinema' -> movies, 'indian food' -> indian food with search_query 'indian restaurants'.\n"
-        "Questions about doing an activity still count as interest submissions when clear, for example 'how do I play padel', 'where can I play badminton', or 'where can I dance with my wife'.\n"
-        "4. For each detected interest, add an object to interest_candidates: {\"label\": \"category_label\", \"search_query\": \"query for places API\"}. Example: {\"label\": \"movies\", \"search_query\": \"movie theaters\"} or {\"label\": \"racket sports\", \"search_query\": \"padel and tennis courts\"} or {\"label\": \"poetry readings\", \"search_query\": \"poetry readings and spoken word venues\"}.\n"
-        "   - assistant_message should be ONE short casual sentence (e.g. 'Nice, here are some spots for that.' or 'Got it. I'll find some Miami spots for movies.').\n"
-        "   - No hyphens or dashes. No 'you're going to love' or 'I found' or 'awesome'. Do NOT ask what they like again in the same message.\n"
-        "5. When you CANNOT map to any category, set interest_candidates to [] and assistant_message should say you didn't quite get it in a friendly way and suggest a few options. Vary your wording; don't repeat the exact same sentence.\n"
-        "6. NEVER repeat the exact same message across turns. Vary phrasing even when the situation is similar.\n"
-        "7. Do not default to mexican food, brunch, art galleries, or farmers markets unless they fit what the user actually said. Vary opening suggestions across coffee shops, movies, outdoor activities, shopping, live music, rooftop bars, and beach activities.\n\n"
-        "Return ONLY valid JSON: {\"assistant_message\": \"...\", \"interest_candidates\": [ {\"label\": \"...\", \"search_query\": \"...\"}, ... ]}. No markdown."
+        "1. ONLY add activities the user clearly LIKES or WANTS to do. "
+        "Positive signals: 'love', 'like', 'enjoy', 'into', 'want to', 'looking for', 'keen on', or simply stating an activity as something they do (e.g. 'water views', 'hiking', 'soccer'). "
+        "A bare mention without negative language counts as positive.\n"
+        "2. If an activity is mentioned ONLY with negative language ('hate', 'don't like', 'not into', 'don't want', 'can't stand'), "
+        "do NOT add it or any replacement to interest_candidates. Return an empty list and acknowledge the dislike.\n"
+        "3. Mixed sentiment (e.g. 'I hate parks and love beaches'): ignore the dislikes, ONLY add the positive interests. "
+        "Do not invent replacements for disliked activities.\n"
+        "4. Greetings/small talk: reply naturally in 1-2 short sentences, then steer to what they like.\n"
+        "5. Keep labels specific to what the user said. 'soccer' stays 'soccer', 'water views' stays 'water views', 'indian food' stays 'indian food'. "
+        "Only use broad labels like 'sports' when the user speaks broadly.\n"
+        "6. For search_query, generate the best Google Places search string for finding real places in Miami. "
+        "Examples: label 'soccer' -> search_query 'soccer fields and clubs in Miami', "
+        "label 'water views' -> search_query 'waterfront restaurants and bars with water views in Miami', "
+        "label 'indian food' -> search_query 'indian restaurants in Miami', "
+        "label 'padel' -> search_query 'padel courts in Miami', "
+        "label 'poetry readings' -> search_query 'poetry readings and spoken word venues in Miami'.\n"
+        "7. assistant_message should be ONE short casual sentence when an interest is found. "
+        "No hyphens or dashes. No 'you're going to love' or 'I found' or 'awesome'.\n"
+        "8. When you cannot identify any activity interest, set interest_candidates to [] and reply friendly, suggesting a few options.\n"
+        "9. NEVER repeat the exact same message. Vary phrasing.\n"
+        "10. Handle typos and misspellings intelligently (e.g. 'gallaries' -> art galleries, 'restobars' -> restaurants and bars, 'coffeeshops' -> coffee shops).\n\n"
+        "IMPORTANT: When the user's message ONLY expresses dislike with no positive interest, "
+        "set \"user_only_expressed_dislike\": true, interest_candidates: [], and reply acknowledging the dislike.\n\n"
+        "Return ONLY valid JSON: {\"assistant_message\": \"...\", \"interest_candidates\": [{\"label\": \"...\", \"search_query\": \"...\"}], \"user_only_expressed_dislike\": true or false}. No markdown."
     )
 
     api_messages = [{"role": "system", "content": system_prompt}]
@@ -1575,9 +1379,22 @@ def call_llm(messages: List[ChatMessage], existing: List[str]) -> Dict[str, Any]
             return {"assistant_message": _small_talk_message(user_text, existing), "interest_candidates": []}
         return {"assistant_message": _unknown_message(existing, user_text), "interest_candidates": []}
 
+    print(f"[LLM raw response] {raw}")
     data = _parse_llm_json(raw)
     raw_candidates = data.get("interest_candidates")
     candidates = _parse_interest_candidates(raw_candidates)
+    print(f"[LLM parsed] candidates={candidates}, dislike_flag={data.get('user_only_expressed_dislike')}")
+
+    # When LLM says user only expressed dislike AND returned no candidates, honor it.
+    # If the LLM returned candidates alongside the flag (mixed sentiment), trust the candidates.
+    if data.get("user_only_expressed_dislike") is True and not candidates:
+        msg = data.get("assistant_message") or _llm_one_line(
+            "The user only said they don't like something. Reply in one short casual sentence: acknowledge that and ask what they do enjoy.",
+            "Got it, you're not into that. What do you enjoy doing when you're out?",
+        )
+        msg = _clean_assistant_text(msg)
+        return {"assistant_message": msg, "interest_candidates": []}
+
     used_extraction_recovery = False
     if not candidates and not _is_small_talk(user_text):
         candidates = _llm_extract_candidates(client, user_text, existing)
@@ -1661,14 +1478,14 @@ def chat(req: ChatRequest) -> ChatResponse:
     candidates: List[Dict[str, str]] = []
     for c in raw_candidates:
         if isinstance(c, str):
-            normalized = _normalize_candidate(c, c)
+            normalized = _normalize_candidate_from_llm(c, c)
             if normalized:
                 normalized["source"] = "llm"
                 candidates.append(normalized)
         elif isinstance(c, dict):
             label = c.get("label") or c.get("interest") or ""
             search_query = c.get("search_query") or label
-            normalized = _normalize_candidate(label, search_query)
+            normalized = _normalize_candidate_from_llm(label, search_query)
             if normalized:
                 normalized["source"] = "llm"
                 candidates.append(normalized)
@@ -1680,35 +1497,50 @@ def chat(req: ChatRequest) -> ChatResponse:
             candidates = [{**cand, "source": "fallback"} for cand in fallback_candidates]
             assistant_message = _examples_intro(fallback_candidates[0]["label"])
 
-    # Find the first new interest (skip if user explicitly rejected it, e.g. "i dont want brunch")
-    new_interest: Optional[str] = None
-    search_query: Optional[str] = None
+    # Collect new (non-duplicate, non-rejected) candidates
+    new_candidates: List[Dict[str, str]] = []
+    duplicate_label: Optional[str] = None
     handled_rejection = False
-    duplicate_label: Optional[str] = None  # first candidate that was already in list
-    chosen_source: Optional[str] = None
     for cand in candidates:
         raw_label = (cand.get("label") or "").strip()
         if not raw_label:
             continue
         label = raw_label
-        if not label:
-            continue
+        source = cand.get("source") or "llm"
         if label.lower() in [i.lower() for i in state.interests]:
             if duplicate_label is None:
                 duplicate_label = label
             continue
-        if _user_rejects_interest(req.message, label):
-            new_interest = None
+        if source == "fallback" and _user_rejects_interest(req.message, label):
             handled_rejection = True
             assistant_message = _specific_rejection_message(label, state.interests, state.messages)
-        else:
-            new_interest = label
-            search_query = cand.get("search_query") or label
-            chosen_source = cand.get("source") or "unknown"
-        break
+            break
+        new_candidates.append(cand)
+
+    new_interest: Optional[str] = None
+    search_query: Optional[str] = None
+    chosen_source: Optional[str] = None
+
+    asked_to_pick_one = False
+    # When user mentioned 2+ likes: ask them to pick one instead of choosing for them
+    if len(new_candidates) >= 2 and not handled_rejection:
+        labels = [c.get("label", "").strip() for c in new_candidates if c.get("label")]
+        labels_str = " and ".join(labels)
+        fallback = f"You mentioned {labels_str}. Which one would you like to explore first?"
+        assistant_message = _llm_one_line(
+            f"The user said they like multiple things: {labels_str}. Ask them to pick one in a short casual sentence.",
+            fallback,
+        )
+        new_interest = None
+        asked_to_pick_one = True
+    elif len(new_candidates) == 1 and not handled_rejection:
+        cand = new_candidates[0]
+        new_interest = (cand.get("label") or "").strip()
+        search_query = cand.get("search_query") or new_interest
+        chosen_source = cand.get("source") or "llm"
 
     # All candidates were duplicates: acknowledge and ask for something different
-    if new_interest is None and not handled_rejection and duplicate_label is not None:
+    if new_interest is None and not handled_rejection and not asked_to_pick_one and duplicate_label is not None:
         assistant_message = _duplicate_interest_message(state.interests, duplicate_label)
 
     # Show examples and count the interest
@@ -1720,6 +1552,8 @@ def chat(req: ChatRequest) -> ChatResponse:
             state.interests.append(new_interest)
             state.awaiting_confirmation = True
             state.last_examples = examples
+            # Always use _examples_intro so message matches the cards (fixes "says football, shows tennis")
+            assistant_message = _examples_intro(new_interest, state.messages)
         else:
             # We understood the interest, but couldn't find real places.
             # Don't show Yes/No; instead, be honest that there aren't good matches.
@@ -1727,23 +1561,7 @@ def chat(req: ChatRequest) -> ChatResponse:
             state.last_examples = []
             assistant_message = _no_results_message(search_query or new_interest, state.interests)
     elif not candidates and not handled_rejection and duplicate_label is None:
-        # No interest found — check if they were rejecting a category (e.g. "i dont want rooftop bar")
-        if _rejects_suggested_options(req.message):
-            assistant_message = _suggestion_rejection_message(state.interests, state.messages)
-        else:
-            rejected_category = None
-            for cat in SUPPORTED_SEARCH_CATEGORIES:
-                if _user_rejects_interest(req.message, cat):
-                    rejected_category = cat
-                    break
-            if rejected_category:
-                assistant_message = _specific_rejection_message(rejected_category, state.interests, state.messages)
-            else:
-                assistant_message = _small_talk_message(req.message, state.interests, state.messages) if _is_small_talk(req.message) else (
-                    _out_of_scope_message(req.message, state.interests, state.messages) if _is_out_of_scope_query(req.message) else (
-                        _unknown_message(state.interests, req.message, state.messages) if state.interests or req.message.strip().lower() not in ("hi", "hello", "hey", "hi!", "hi there", "hello there") else GREETING
-                    )
-                )
+        pass
 
     state.messages.append(ChatMessage(role="assistant", content=assistant_message))
 
